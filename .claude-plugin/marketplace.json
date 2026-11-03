@@ -1,0 +1,14 @@
+{
+  "name": "battery-alert",
+  "description": "Loud low-battery alert for macOS with shutdown-time forecast.",
+  "owner": {
+    "name": "Giovanni Porcari"
+  },
+  "plugins": [
+    {
+      "name": "battery-alert",
+      "source": "./",
+      "description": "Loud low-battery alert for macOS with shutdown-time forecast."
+    }
+  ]
+}
