@@ -34,6 +34,7 @@ RETENTION_DAYS=7
 VOICE=1
 SOUND=1
 SOUND_FILE=/System/Library/Sounds/Sosumi.aiff
+DRAIN_MA=-50
 RAISE_VOLUME=1
 ALERT_VOLUME=80
 LANGUAGE=it
@@ -43,8 +44,10 @@ mkdir -p "$DATA_DIR"
 touch "$SAMPLES"
 NOW="${BATTERY_ALERT_NOW:-$(date +%s)}"
 
-# Sets MAH FULL AMP PCT AC. ioreg prints a negative current as an unsigned
-# 64-bit integer; bash arithmetic wraps it back to the signed value.
+# Sets MAH FULL AMP PCT AC DRAIN. ioreg prints a negative current as an
+# unsigned 64-bit integer; bash arithmetic wraps it back to the signed value.
+# DRAIN is 1 on battery, and also on a charger too weak to cover the load
+# (current below DRAIN_MA).
 read_battery() {
     local raw
     if [ -n "${BATTERY_ALERT_FAKE:-}" ]; then
@@ -66,6 +69,7 @@ read_battery() {
         exit 1
     fi
     AMP=$((AMP))
+    if [ "$AC" = 0 ] || [ "$AMP" -lt "$DRAIN_MA" ]; then DRAIN=1; else DRAIN=0; fi
 }
 
 # A reboot after the last sample, with that sample on battery and low,
@@ -73,10 +77,12 @@ read_battery() {
 learn_floor() {
     [ -n "${BATTERY_ALERT_FAKE:-}" ] && return
     [ -s "$SAMPLES" ] || return
-    local boot last_ts last_mah last_pct last_ac
+    local boot last_ts last_mah last_pct last_ac last_drain
     boot=$(sysctl -n kern.boottime | awk -F'[ ,]+' '{ print $4 }')
-    IFS=, read -r last_ts last_mah _ _ last_pct last_ac <<< "$(tail -n 1 "$SAMPLES")"
-    if [ "$last_ts" -lt "$boot" ] && [ "$last_ac" = 0 ] && [ "$last_pct" -le "$CRITICAL_PERCENT" ]; then
+    IFS=, read -r last_ts last_mah _ _ last_pct last_ac last_drain <<< "$(tail -n 1 "$SAMPLES")"
+    # Samples written before 0.1.1 have no drain column.
+    [ -z "$last_drain" ] && last_drain=$((1 - last_ac))
+    if [ "$last_ts" -lt "$boot" ] && [ "$last_drain" = 1 ] && [ "$last_pct" -le "$CRITICAL_PERCENT" ]; then
         echo "$last_mah" > "$FLOOR_FILE"
         echo "$(date -r "$NOW" '+%F %T') shutdown floor learned: $last_mah mAh"
     fi
@@ -88,20 +94,21 @@ floor() {
 
 # Prints minutes left until the floor, or nothing when no forecast is possible.
 # Regression uses the discharge samples of the last WINDOW_MINUTES that come
-# after the last sample on AC; with fewer than 3 samples spanning 2 minutes
-# it falls back to remaining charge / instant current.
+# after the last sample not draining; with fewer than 3 samples spanning
+# 2 minutes it falls back to remaining charge / instant current.
 forecast_minutes() {
     local fl
     fl=$(floor)
     awk -F, -v now="$NOW" -v win="$((WINDOW_MINUTES * 60))" \
-        -v mah="$MAH" -v amp="$AMP" -v ac="$AC" -v fl="$fl" '
+        -v mah="$MAH" -v amp="$AMP" -v drain="$DRAIN" -v fl="$fl" '
         $1 >= now - win {
-            if ($6 == 1) { n = 0; sx = sy = sxx = sxy = 0; t0 = ""; next }
+            sample_drain = ($7 == "") ? ($6 == 0) : $7
+            if (sample_drain == 0) { n = 0; sx = sy = sxx = sxy = 0; t0 = ""; next }
             if (t0 == "") t0 = $1
             x = $1 - t0; n++; sx += x; sy += $2; sxx += x * x; sxy += x * $2; last = x
         }
         END {
-            if (ac == 1) exit
+            if (drain == 0) exit
             if (n >= 3 && last >= 120) {
                 slope = (n * sxy - sx * sy) / (n * sxx - sx * sx)
                 if (slope < 0) { printf "%d\n", (mah - fl) / -slope / 60; exit }
@@ -111,18 +118,23 @@ forecast_minutes() {
 }
 
 message() {
-    local level=$1 minutes=$2 at
+    local level=$1 minutes=$2 at action
+    if [ "$LANGUAGE" = it ]; then
+        if [ "$AC" = 1 ]; then action="L'alimentatore non basta, la batteria si scarica."; else action="Collega l'alimentatore."; fi
+    else
+        if [ "$AC" = 1 ]; then action="The charger is too weak, the battery is draining."; else action="Plug in the charger."; fi
+    fi
     if [ -n "$minutes" ]; then
         at=$(date -r "$((NOW + minutes * 60))" '+%H:%M')
         if [ "$LANGUAGE" = it ]; then
-            echo "Batteria: $PCT per cento. Spegnimento previsto alle $at, tra $minutes minuti. Collega l'alimentatore."
+            echo "Batteria: $PCT per cento. Spegnimento previsto alle $at, tra $minutes minuti. $action"
         else
-            echo "Battery at $PCT percent. Shutdown expected at $at, in $minutes minutes. Plug in the charger."
+            echo "Battery at $PCT percent. Shutdown expected at $at, in $minutes minutes. $action"
         fi
     elif [ "$LANGUAGE" = it ]; then
-        echo "Batteria: $PCT per cento. Collega l'alimentatore."
+        echo "Batteria: $PCT per cento. $action"
     else
-        echo "Battery at $PCT percent. Plug in the charger."
+        echo "Battery at $PCT percent. $action"
     fi
 }
 
@@ -182,32 +194,32 @@ case "${1:-}" in
     --status)
         read_battery
         minutes=$(forecast_minutes)
-        echo "charge: $PCT% ($MAH / $FULL mAh), current: $AMP mA, charger: $([ "$AC" = 1 ] && echo yes || echo no)"
+        echo "charge: $PCT% ($MAH / $FULL mAh), current: $AMP mA, charger: $([ "$AC" = 1 ] && echo yes || echo no), draining: $([ "$DRAIN" = 1 ] && echo yes || echo no)"
         echo "shutdown floor: $(floor) mAh"
         if [ -n "$minutes" ]; then
             echo "forecast: $minutes minutes, shutdown at $(date -r "$((NOW + minutes * 60))" '+%H:%M')"
         else
-            echo "forecast: none (charging or not enough samples)"
+            echo "forecast: none (not draining or not enough samples)"
         fi
         echo "level now: $(level_for "$minutes")"
         ;;
     --test)
         read_battery
-        [ "$AC" = 1 ] && PCT=$WARN_PERCENT
+        [ "$DRAIN" = 0 ] && PCT=$WARN_PERCENT
         alert "${2:-warn}" "$(message "${2:-warn}" "$(forecast_minutes)")"
         ;;
     "")
         read_battery
         learn_floor
-        echo "$NOW,$MAH,$FULL,$AMP,$PCT,$AC" >> "$SAMPLES"
+        echo "$NOW,$MAH,$FULL,$AMP,$PCT,$AC,$DRAIN" >> "$SAMPLES"
         trim_samples
         minutes=$(forecast_minutes)
         level=$(level_for "$minutes")
-        [ "$AC" = 1 ] && level=none
+        [ "$DRAIN" = 0 ] && level=none
         previous=$(cat "$STATE_FILE" 2>/dev/null || echo none)
         echo "$level" > "$STATE_FILE"
-        # Read by BatteryAlertBar: epoch level minutes(-1 = none) percent charger.
-        echo "$NOW $level ${minutes:--1} $PCT $AC" > "$STATUS_FILE"
+        # Read by BatteryAlertBar: epoch level minutes(-1 = none) percent draining charger.
+        echo "$NOW $level ${minutes:--1} $PCT $DRAIN $AC" > "$STATUS_FILE"
         if [ "$level" = critical ] || { [ "$level" = warn ] && [ "$previous" = none ]; }; then
             alert "$level" "$(message "$level" "$minutes")"
         fi

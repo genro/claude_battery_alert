@@ -55,21 +55,24 @@ struct Config {
     }
 }
 
-// One line written by battery_check.sh: "epoch level minutes percent charger".
+// One line written by battery_check.sh: "epoch level minutes percent draining charger".
+// draining is 1 on battery and on a charger too weak to cover the load.
 struct Status {
     var timestamp: Int
     var level: String
     var minutes: Int?
     var percent: Int
+    var draining: Bool
     var charger: Bool
 
     static func read(_ path: String) -> Status? {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         let fields = text.split(whereSeparator: { $0 == " " || $0 == "\n" })
-        guard fields.count == 5, let timestamp = Int(fields[0]),
+        guard fields.count == 6, let timestamp = Int(fields[0]),
               let minutes = Int(fields[2]), let percent = Int(fields[3]) else { return nil }
         return Status(timestamp: timestamp, level: String(fields[1]),
-                      minutes: minutes < 0 ? nil : minutes, percent: percent, charger: fields[4] == "1")
+                      minutes: minutes < 0 ? nil : minutes, percent: percent,
+                      draining: fields[4] == "1", charger: fields[5] == "1")
     }
 }
 
@@ -83,7 +86,7 @@ struct Look: Equatable {
     var visible: Bool { border != nil || tint > 0 }
 
     static func of(_ status: Status?, _ config: Config) -> Look {
-        guard let status, !status.charger else { return Look() }
+        guard let status, status.draining else { return Look() }
         switch status.level {
         case "warn":
             guard config.screenBorder else { return Look() }
@@ -224,7 +227,9 @@ final class Banner: NSObject {
 
 func bannerText(_ status: Status, _ language: String) -> String {
     let italian = language == "it"
-    let first = italian ? "Collega l'alimentatore" : "Plug in the charger"
+    let first = status.charger
+        ? (italian ? "L'alimentatore non basta" : "The charger is too weak")
+        : (italian ? "Collega l'alimentatore" : "Plug in the charger")
     if let minutes = status.minutes {
         return first + "\n" + (italian ? "Spegnimento tra \(minutes) minuti" : "Shutdown in \(minutes) minutes")
     }
@@ -297,7 +302,7 @@ var demo: Status?
 let arguments = CommandLine.arguments
 if arguments.count == 5, arguments[1] == "--demo", let minutes = Int(arguments[3]), let percent = Int(arguments[4]) {
     demo = Status(timestamp: Int(Date().timeIntervalSince1970), level: arguments[2],
-                  minutes: minutes < 0 ? nil : minutes, percent: percent, charger: false)
+                  minutes: minutes < 0 ? nil : minutes, percent: percent, draining: true, charger: false)
 } else if arguments.count != 1 {
     FileHandle.standardError.write("usage: BatteryAlertBar [--demo LEVEL MINUTES PERCENT]\n".data(using: .utf8)!)
     exit(2)

@@ -21,7 +21,9 @@ is expected to shut down.
   opacity towards shutdown. Clicks go through the tint.
 - Last 3 minutes: a full-screen banner with an OK button. It comes back at
   the next check while the Mac is on battery.
-- Everything stops when the charger is connected.
+- Everything stops when the charger is connected and charging. A charger too
+  weak for the load (negative current) counts as discharge: the alert says
+  the charger is not enough.
 - After a shutdown on battery, the last sample's mAh becomes the zero of the
   forecast.
 

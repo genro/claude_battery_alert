@@ -26,7 +26,7 @@ BAR_PLIST="$AGENTS_DIR/$BAR_LABEL.plist"
 LOG_FILE="$HOME/Library/Logs/battery-alert.log"
 DOMAIN="gui/$(id -u)"
 
-KEYS="CHECK_INTERVAL WARN_PERCENT CRITICAL_PERCENT WARN_MINUTES CRITICAL_MINUTES FINAL_PERCENT FINAL_MINUTES WINDOW_MINUTES RETENTION_DAYS VOICE SOUND SOUND_FILE RAISE_VOLUME ALERT_VOLUME SCREEN_BORDER SCREEN_TINT TINT_MIN TINT_MAX FINAL_BANNER BORDER_WIDTH LANGUAGE"
+KEYS="CHECK_INTERVAL WARN_PERCENT CRITICAL_PERCENT WARN_MINUTES CRITICAL_MINUTES FINAL_PERCENT FINAL_MINUTES WINDOW_MINUTES DRAIN_MA RETENTION_DAYS VOICE SOUND SOUND_FILE RAISE_VOLUME ALERT_VOLUME SCREEN_BORDER SCREEN_TINT TINT_MIN TINT_MAX FINAL_BANNER BORDER_WIDTH LANGUAGE"
 
 write_default_config() {
     mkdir -p "$CONFIG_DIR"
@@ -40,6 +40,7 @@ CRITICAL_MINUTES=8         # repeated alert when the forecast drops to this
 FINAL_PERCENT=3            # full-screen banner at this charge
 FINAL_MINUTES=3            # full-screen banner when the forecast drops to this
 WINDOW_MINUTES=15          # discharge samples used by the regression
+DRAIN_MA=-50               # on charger, a current below this (mA) counts as discharge
 RETENTION_DAYS=7           # samples kept in samples.csv
 VOICE=1                    # 1 = spoken message
 SOUND=1                    # 1 = play SOUND_FILE

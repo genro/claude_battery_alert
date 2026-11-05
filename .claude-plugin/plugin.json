@@ -1,6 +1,6 @@
 {
   "name": "battery-alert",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Loud low-battery alert for macOS with shutdown-time forecast: sound, voice and a modal dialog before the Mac dies.",
   "author": {
     "name": "Giovanni Porcari"

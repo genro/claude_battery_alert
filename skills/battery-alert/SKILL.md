@@ -38,6 +38,7 @@ Tell the user before running them.
 | `FINAL_PERCENT` | 3 | full-screen banner at this charge |
 | `FINAL_MINUTES` | 3 | full-screen banner when the forecast reaches this |
 | `WINDOW_MINUTES` | 15 | discharge history used by the regression |
+| `DRAIN_MA` | -50 | on charger, a current below this (mA) counts as discharge |
 | `RETENTION_DAYS` | 7 | samples kept |
 | `VOICE` | 1 | spoken message |
 | `SOUND` | 1 | play `SOUND_FILE` |
@@ -56,10 +57,11 @@ Values contain no spaces.
 
 ## How the forecast works
 
-- Each check appends `epoch,mAh,full mAh,mA,percent,charger` to
+- Each check appends `epoch,mAh,full mAh,mA,percent,charger,draining` to
   `~/.local/share/battery-alert/samples.csv`.
 - The forecast is a linear regression of mAh over time on the discharge
-  samples of the last `WINDOW_MINUTES`, after the last sample on charger.
+  samples of the last `WINDOW_MINUTES`, after the last sample not draining. A sample is draining on battery, and on
+  a charger when the current is below `DRAIN_MA`.
 - With fewer than 3 samples spanning 2 minutes it uses remaining mAh divided by
   the instant current.
 - When the Mac reboots after a low sample on battery, that sample's mAh is saved
