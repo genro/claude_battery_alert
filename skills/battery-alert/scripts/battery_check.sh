@@ -2,7 +2,7 @@
 # Battery check, run every CHECK_INTERVAL seconds by launchd.
 # Appends one sample to samples.csv, forecasts the shutdown time by linear
 # regression on the recent discharge samples, and raises a loud alert
-# (sound, voice, modal dialog) when the charge or the forecast crosses a threshold.
+# (sound, voice) when the charge or the forecast crosses a threshold.
 #
 # Usage:
 #   battery_check.sh            one check (what launchd runs)
@@ -34,7 +34,7 @@ RETENTION_DAYS=7
 VOICE=1
 SOUND=1
 SOUND_FILE=/System/Library/Sounds/Sosumi.aiff
-DRAIN_MA=-50
+TREND_MINUTES=5
 RAISE_VOLUME=1
 ALERT_VOLUME=80
 LANGUAGE=it
@@ -47,7 +47,7 @@ NOW="${BATTERY_ALERT_NOW:-$(date +%s)}"
 # Sets MAH FULL AMP PCT AC DRAIN. ioreg prints a negative current as an
 # unsigned 64-bit integer; bash arithmetic wraps it back to the signed value.
 # DRAIN is 1 on battery, and also on a charger too weak to cover the load
-# (current below DRAIN_MA).
+# (see charger_draining).
 read_battery() {
     local raw
     if [ -n "${BATTERY_ALERT_FAKE:-}" ]; then
@@ -69,7 +69,24 @@ read_battery() {
         exit 1
     fi
     AMP=$((AMP))
-    if [ "$AC" = 0 ] || [ "$AMP" -lt "$DRAIN_MA" ]; then DRAIN=1; else DRAIN=0; fi
+    if [ "$AC" = 0 ] || [ -n "$(charger_draining)" ]; then DRAIN=1; else DRAIN=0; fi
+}
+
+# On a charger the instant current swings below zero under load spikes while
+# the charge still grows. Prints 1 when the mAh of the charger samples of the
+# last TREND_MINUTES, plus the current reading, fall by linear regression;
+# needs 3 samples spanning 2 minutes, otherwise prints nothing.
+charger_draining() {
+    awk -F, -v now="$NOW" -v win="$((TREND_MINUTES * 60))" -v mah="$MAH" '
+        function add(t, m) {
+            if (t0 == "") t0 = t
+            x = t - t0; n++; sx += x; sy += m; sxx += x * x; sxy += x * m; last = x
+        }
+        $1 >= now - win && $6 == 1 { add($1, $2) }
+        END {
+            add(now, mah)
+            if (n >= 3 && last >= 120 && (n * sxy - sx * sy) / (n * sxx - sx * sx) < 0) print 1
+        }' "$SAMPLES" 2>/dev/null
 }
 
 # A reboot after the last sample, with that sample on battery and low,
@@ -117,30 +134,24 @@ forecast_minutes() {
         }' "$SAMPLES" 2>/dev/null
 }
 
+# Spoken text: the minutes left, or the percent when there is no forecast.
 message() {
-    local level=$1 minutes=$2 at action
-    if [ "$LANGUAGE" = it ]; then
-        if [ "$AC" = 1 ]; then action="L'alimentatore non basta, la batteria si scarica."; else action="Collega l'alimentatore."; fi
-    else
-        if [ "$AC" = 1 ]; then action="The charger is too weak, the battery is draining."; else action="Plug in the charger."; fi
-    fi
+    local minutes=$1
     if [ -n "$minutes" ]; then
-        at=$(date -r "$((NOW + minutes * 60))" '+%H:%M')
         if [ "$LANGUAGE" = it ]; then
-            echo "Batteria: $PCT per cento. Spegnimento previsto alle $at, tra $minutes minuti. $action"
+            if [ "$minutes" = 1 ]; then echo "Resta 1 minuto."; else echo "Restano $minutes minuti."; fi
         else
-            echo "Battery at $PCT percent. Shutdown expected at $at, in $minutes minutes. $action"
+            if [ "$minutes" = 1 ]; then echo "1 minute left."; else echo "$minutes minutes left."; fi
         fi
     elif [ "$LANGUAGE" = it ]; then
-        echo "Batteria: $PCT per cento. $action"
+        echo "Batteria al $PCT per cento."
     else
-        echo "Battery at $PCT percent. $action"
+        echo "Battery at $PCT percent."
     fi
 }
 
 alert() {
-    local level=$1 text=$2 title old_volume old_muted repeats=1
-    if [ "$LANGUAGE" = it ]; then title="Batteria scarica"; else title="Battery low"; fi
+    local level=$1 text=$2 old_volume old_muted repeats=1
     [ "$level" = critical ] && repeats=3
     if [ "${BATTERY_ALERT_DRY:-0}" = 1 ]; then
         echo "ALERT $level: $text"
@@ -167,7 +178,6 @@ alert() {
             osascript -e "set volume output volume $old_volume"
         fi
     fi
-    osascript -e "display alert \"$title\" message \"$text\" as critical giving up after 45" > /dev/null
 }
 
 level_for() {
@@ -206,7 +216,7 @@ case "${1:-}" in
     --test)
         read_battery
         [ "$DRAIN" = 0 ] && PCT=$WARN_PERCENT
-        alert "${2:-warn}" "$(message "${2:-warn}" "$(forecast_minutes)")"
+        alert "${2:-warn}" "$(message "$(forecast_minutes)")"
         ;;
     "")
         read_battery
@@ -221,7 +231,7 @@ case "${1:-}" in
         # Read by BatteryAlertBar: epoch level minutes(-1 = none) percent draining charger.
         echo "$NOW $level ${minutes:--1} $PCT $DRAIN $AC" > "$STATUS_FILE"
         if [ "$level" = critical ] || { [ "$level" = warn ] && [ "$previous" = none ]; }; then
-            alert "$level" "$(message "$level" "$minutes")"
+            alert "$level" "$(message "$minutes")"
         fi
         ;;
     *)

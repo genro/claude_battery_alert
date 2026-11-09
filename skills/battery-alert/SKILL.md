@@ -1,12 +1,12 @@
 ---
 name: battery-alert
-description: Loud low-battery alert for macOS — a launchd agent samples the battery every minute in mAh, forecasts the shutdown time by linear regression, and alerts with sound, voice, a modal dialog and a screen overlay (border, red tint, final full-screen banner) before the Mac dies. Use to install, remove, configure, test or check the battery alert, or to ask when the Mac will shut down — "installa l'avviso batteria", "metti la soglia al 20%", "prova l'avviso", "quando si spegne il mac", "togli l'avviso batteria", "battery alert status".
+description: Loud low-battery alert for macOS — a launchd agent samples the battery every minute in mAh, forecasts the shutdown time by linear regression, and alerts with sound, voice and a screen overlay (border, red tint, final full-screen banner) before the Mac dies. Use to install, remove, configure, test or check the battery alert, or to ask when the Mac will shut down — "installa l'avviso batteria", "metti la soglia al 20%", "prova l'avviso", "quando si spegne il mac", "togli l'avviso batteria", "battery alert status".
 ---
 
 # battery-alert
 
 The alert runs outside Claude, as two launchd agents: `battery_check.sh`
-every minute for sound, voice and dialog, and `BatteryAlertBar` (compiled
+every minute for sound and voice, and `BatteryAlertBar` (compiled
 with `swiftc` at install) for the screen overlay. This skill only drives
 `scripts/manage.sh` (path relative to this skill's base directory). Run it
 with `/bin/bash`. Report its output to the user as it is.
@@ -38,9 +38,9 @@ Tell the user before running them.
 | `FINAL_PERCENT` | 3 | full-screen banner at this charge |
 | `FINAL_MINUTES` | 3 | full-screen banner when the forecast reaches this |
 | `WINDOW_MINUTES` | 15 | discharge history used by the regression |
-| `DRAIN_MA` | -50 | on charger, a current below this (mA) counts as discharge |
+| `TREND_MINUTES` | 5 | on charger, falling mAh over this window count as discharge |
 | `RETENTION_DAYS` | 7 | samples kept |
-| `VOICE` | 1 | spoken message |
+| `VOICE` | 1 | spoken minutes left (percent when there is no forecast) |
 | `SOUND` | 1 | play `SOUND_FILE` |
 | `SOUND_FILE` | `/System/Library/Sounds/Sosumi.aiff` | any file in `/System/Library/Sounds/` |
 | `RAISE_VOLUME` | 1 | raise the volume during the alert, then restore it |
@@ -61,7 +61,8 @@ Values contain no spaces.
   `~/.local/share/battery-alert/samples.csv`.
 - The forecast is a linear regression of mAh over time on the discharge
   samples of the last `WINDOW_MINUTES`, after the last sample not draining. A sample is draining on battery, and on
-  a charger when the current is below `DRAIN_MA`.
+  a charger when the regression of the charger samples of the last
+  `TREND_MINUTES` has a negative slope (3 samples spanning 2 minutes needed).
 - With fewer than 3 samples spanning 2 minutes it uses remaining mAh divided by
   the instant current.
 - When the Mac reboots after a low sample on battery, that sample's mAh is saved

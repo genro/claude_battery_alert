@@ -3,8 +3,8 @@
 Loud low-battery alert for macOS, driven from Claude Code.
 
 macOS shows a small banner around 10% and then shuts down. battery-alert
-replaces that with a sound, a spoken message, a modal dialog and signals on
-the screen that grow as the shutdown approaches, and tells you when the Mac
+replaces that with a sound, a spoken message with the minutes left and
+signals on the screen that grow as the shutdown approaches, and tells you when the Mac
 is expected to shut down.
 
 ## How it works
@@ -14,16 +14,17 @@ is expected to shut down.
   `ioreg -rn AppleSmartBattery` and appends a sample to a CSV file.
 - The shutdown time is a linear regression of mAh over the last 15 minutes
   of discharge.
-- First alert at 15% or 20 minutes left: sound, voice, dialog, thin orange
+- First alert at 15% or 20 minutes left: sound, voice, thin orange
   border around every screen.
 - Critical at 7% or 8 minutes left: the alert repeats at every check, the
   border turns red and pulses, a red tint covers the screen and grows to 12%
   opacity towards shutdown. Clicks go through the tint.
 - Last 3 minutes: a full-screen banner with an OK button. It comes back at
   the next check while the Mac is on battery.
-- Everything stops when the charger is connected and charging. A charger too
-  weak for the load (negative current) counts as discharge: the alert says
-  the charger is not enough.
+- Everything stops when the charger is connected and the charge grows. A
+  charger too weak for the load counts as discharge when the mAh of the last
+  5 minutes fall; the instant current alone does not count, because it goes
+  negative under load spikes while the charge still grows.
 - After a shutdown on battery, the last sample's mAh becomes the zero of the
   forecast.
 

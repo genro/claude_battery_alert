@@ -26,7 +26,7 @@ BAR_PLIST="$AGENTS_DIR/$BAR_LABEL.plist"
 LOG_FILE="$HOME/Library/Logs/battery-alert.log"
 DOMAIN="gui/$(id -u)"
 
-KEYS="CHECK_INTERVAL WARN_PERCENT CRITICAL_PERCENT WARN_MINUTES CRITICAL_MINUTES FINAL_PERCENT FINAL_MINUTES WINDOW_MINUTES DRAIN_MA RETENTION_DAYS VOICE SOUND SOUND_FILE RAISE_VOLUME ALERT_VOLUME SCREEN_BORDER SCREEN_TINT TINT_MIN TINT_MAX FINAL_BANNER BORDER_WIDTH LANGUAGE"
+KEYS="CHECK_INTERVAL WARN_PERCENT CRITICAL_PERCENT WARN_MINUTES CRITICAL_MINUTES FINAL_PERCENT FINAL_MINUTES WINDOW_MINUTES TREND_MINUTES RETENTION_DAYS VOICE SOUND SOUND_FILE RAISE_VOLUME ALERT_VOLUME SCREEN_BORDER SCREEN_TINT TINT_MIN TINT_MAX FINAL_BANNER BORDER_WIDTH LANGUAGE"
 
 write_default_config() {
     mkdir -p "$CONFIG_DIR"
@@ -40,9 +40,9 @@ CRITICAL_MINUTES=8         # repeated alert when the forecast drops to this
 FINAL_PERCENT=3            # full-screen banner at this charge
 FINAL_MINUTES=3            # full-screen banner when the forecast drops to this
 WINDOW_MINUTES=15          # discharge samples used by the regression
-DRAIN_MA=-50               # on charger, a current below this (mA) counts as discharge
+TREND_MINUTES=5            # on charger, falling mAh over these minutes count as discharge
 RETENTION_DAYS=7           # samples kept in samples.csv
-VOICE=1                    # 1 = spoken message
+VOICE=1                    # 1 = spoken minutes left
 SOUND=1                    # 1 = play SOUND_FILE
 SOUND_FILE=/System/Library/Sounds/Sosumi.aiff
 RAISE_VOLUME=1             # 1 = raise the volume to ALERT_VOLUME during the alert, then restore it
@@ -144,7 +144,7 @@ cmd_install() {
         load "$BAR_LABEL" "$BAR_PLIST"
         echo "installed: $BAR_PLIST"
     else
-        echo "swiftc not found: no screen overlay, only sound, voice and dialog." >&2
+        echo "swiftc not found: no screen overlay, only sound and voice." >&2
         echo "Install the Command Line Tools with: xcode-select --install, then run install again." >&2
     fi
     echo "config:    $CONFIG_FILE"
